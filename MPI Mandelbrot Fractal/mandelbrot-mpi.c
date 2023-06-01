@@ -33,7 +33,8 @@ void color(int red, int green, int blue)
 }
 
 
-void calculate_portion(int y, int xInit, int xEnd, int h, int w, int *brightness) {
+void calculate_portion(int y, int xInit, int xEnd, int h, int w, int *brightness) 
+{
     double pr, pi;                         
     double newRe, newIm, oldRe, oldIm;  
     int x;   
@@ -48,7 +49,8 @@ void calculate_portion(int y, int xInit, int xEnd, int h, int w, int *brightness
         newRe = newIm = oldRe = oldIm = 0.0; /* these should start at 0.0 */
         
         /* start the iteration process */
-        for(i = 0; i < maxIterations; i++) {
+        for(i = 0; i < maxIterations; i++) 
+        {
             /* remember value of previous iteration */
             oldRe = newRe;
             oldIm = newIm;
@@ -60,9 +62,11 @@ void calculate_portion(int y, int xInit, int xEnd, int h, int w, int *brightness
         }
         
         /* color(i % 256, 255, 255 * (i < maxIterations)); */
-        if(i == maxIterations) {
+        if(i == maxIterations) 
+        {
             brightness[x - xInit] = 0;
-        } else {
+        } else 
+        {
             double z = sqrt(newRe * newRe + newIm * newIm);
             int currentBrightness = 256 * log2(1.75 + i - log2(log2(z))) / log2((double)maxIterations);
             brightness[x - xInit] = currentBrightness;
@@ -70,61 +74,73 @@ void calculate_portion(int y, int xInit, int xEnd, int h, int w, int *brightness
     }
 }
 
+void print_fractal(int *brightness_buffer, int nproc, int n_cols_proc, int last_proc_residual) 
+{
+    MPI_Status status;
+    int i,j;
+    for (i=1; i < nproc; i++) 
+    {
+        int count = n_cols_proc;
+        if (i == nproc - 1) 
+            count += last_proc_residual;
+        // send the pixel calculated and wait to the master read the cols calculated(syncronization)
+        MPI_Recv(brightness_buffer, count, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
+        for (j=0; j<count; j++) 
+        {
+            int b = brightness_buffer[j];
+            if (b==0)
+                color(0, 0, 0);
+            else
+                color(b, b, 255);
+        }
+    }
+}
+
 int main(int argc, char *argv[])
 {
-    int w = 600, h = 400, x, y;
-    int iproc, nproc;
-    
-    MPI_Status status;
+    int w = 3000, h = 2000, x, y;
     clock_t begin, end;
     double time_spent;
-    
+    int iproc, nproc;
+
     MPI_Init( &argc, &argv ); 
     MPI_Comm_rank(MPI_COMM_WORLD, &iproc);    
-    MPI_Comm_size(MPI_COMM_WORLD, &nproc);    
-    if (iproc == 0) {
+    MPI_Comm_size(MPI_COMM_WORLD, &nproc); 
+    int brightness[w];
+    
+    // Print image header   
+    if (iproc == 0) 
+    {
         printf("P6\n# CREATOR: Eric R. Weeks / mandel program\n");
         printf("%d %d\n255\n",w,h);
     }
 
+    // start the fractal generation
     begin = clock();
-    int brightness[w];
     // calculate load distribution
     int n_operators_proc = nproc - 1;
     int residual = w % n_operators_proc; 
     int n_cols_proc = residual + w / n_operators_proc;
     int x_init = n_cols_proc * (iproc - 1);
     int x_end = (x_init + n_cols_proc);
-
-    fprintf(stderr, "irpoc=%d s=%d end=%d \n", iproc, x_init, x_end);
     /* loop through every pixel */
-    for(y = 0; y < h; y++) {
-        if (iproc != 0) {
+    for(y = 0; y < h; y++) 
+    {
+        if (iproc != 0) 
+        {
             calculate_portion(y, x_init, x_end, h, w, brightness);            
             MPI_Send(brightness, n_cols_proc, MPI_INT, 0, 0, MPI_COMM_WORLD);
-        } else {
-            int i,j;
-            for (i=1; i < nproc; i++) {
-                int count = (n_cols_proc + residual);
-                MPI_Recv(brightness, count, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
-                for (j=0; j<count; j++) {
-                    int b = brightness[j];
-                    fprintf(stderr, "%d ", b);
-                    if (b==0)
-                        color(0, 0, 0);
-                    else
-                        color(b, b, 255);
-                }
-            }
-            fprintf(stderr, "\n");
+        } else 
+        {
+            print_fractal(brightness, nproc, n_cols_proc, residual);
         }
     }
     MPI_Finalize(); 
-    
-    end = clock();
-    
-    time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
-    fprintf(stderr, "Elapsed time: %.2f seconds.\n", time_spent);
-    
+
+    if (iproc == 0) {
+        end = clock();
+        time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
+        fprintf(stderr, "Elapsed time: %.2f seconds.\n", time_spent);
+    }
     return 0;
 }
