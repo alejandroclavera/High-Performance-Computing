@@ -11,15 +11,11 @@
  * smaller.
 */
 
-#include <stdio.h>
 #include<mpi.h>
-
 #include <math.h>
 #include <stdlib.h>
 #include <time.h>
 #include <stdio.h>
-
-
 
 double zoom = 1, moveX = -0.5, moveY = 0; /* you can change these to zoom and change position */
 int maxIterations = 10000;  
@@ -80,9 +76,7 @@ void print_fractal(int *brightness_buffer, int nproc, int n_cols_proc, int last_
     int i,j;
     for (i=1; i < nproc; i++) 
     {
-        int count = n_cols_proc;
-        if (i == nproc - 1) 
-            count += last_proc_residual;
+        int count = n_cols_proc + ((i == nproc - 1) ? last_proc_residual : 0);
         // send the pixel calculated and wait to the master read the cols calculated(syncronization)
         MPI_Recv(brightness_buffer, count, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
         for (j=0; j<count; j++) 
@@ -98,7 +92,7 @@ void print_fractal(int *brightness_buffer, int nproc, int n_cols_proc, int last_
 
 int main(int argc, char *argv[])
 {
-    int w = 3000, h = 2000, x, y;
+    int w = 600, h = 400, x, y;
     clock_t begin, end;
     double time_spent;
     int iproc, nproc;
@@ -116,13 +110,13 @@ int main(int argc, char *argv[])
     }
 
     // start the fractal generation
-    begin = clock();
+    begin = MPI_Wtime();
     // calculate load distribution
     int n_operators_proc = nproc - 1;
     int residual = w % n_operators_proc; 
-    int n_cols_proc = residual + w / n_operators_proc;
+    int n_cols_proc = w / n_operators_proc;
     int x_init = n_cols_proc * (iproc - 1);
-    int x_end = (x_init + n_cols_proc);
+    int x_end = x_init + n_cols_proc +  ((iproc == nproc - 1) ? residual : 0);
     /* loop through every pixel */
     for(y = 0; y < h; y++) 
     {
@@ -135,11 +129,11 @@ int main(int argc, char *argv[])
             print_fractal(brightness, nproc, n_cols_proc, residual);
         }
     }
+    end = MPI_Wtime();
     MPI_Finalize(); 
 
     if (iproc == 0) {
-        end = clock();
-        time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
+        time_spent = (double)(end - begin);
         fprintf(stderr, "Elapsed time: %.2f seconds.\n", time_spent);
     }
     return 0;
