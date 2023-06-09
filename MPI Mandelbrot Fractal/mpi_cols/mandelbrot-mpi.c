@@ -57,7 +57,6 @@ void calculate_portion(int y, int xInit, int xEnd, int h, int w, int *brightness
             if((newRe * newRe + newIm * newIm) > 4) break;
         }
         
-        /* color(i % 256, 255, 255 * (i < maxIterations)); */
         if(i == maxIterations) 
         {
             brightness[x - xInit] = 0;

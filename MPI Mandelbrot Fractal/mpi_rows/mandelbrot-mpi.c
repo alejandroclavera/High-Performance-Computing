@@ -29,16 +29,14 @@ void color(int red, int green, int blue)
 }
 
 
-int* calculate_portion(int y_init, int y_end, int w, int h) 
+void operator_process(int start, int increment, int w, int h) 
 {
     double pr, pi;                         
     double newRe, newIm, oldRe, oldIm;  
-    int count = y_end - y_init;   
-    fprintf(stderr, "start=%d, end=%d, count=%d\n", y_init, y_end, count);
-    int *brightness = malloc(w * count * sizeof(int));
+    int *brightness = malloc(w * sizeof(int));
     int x,y; 
     
-    for (y = y_init; y < y_end; y++) 
+    for (y = start; y < h; y+=increment) 
     {
         for(x = 0; x < w; x++) 
         {
@@ -63,7 +61,7 @@ int* calculate_portion(int y_init, int y_end, int w, int h)
                 /* if the point is outside the circle with radius 2: stop */
                 if((newRe * newRe + newIm * newIm) > 4) break;
             }
-            int idx = (w * (y-y_init)) + x;
+            int idx = x;
             if(i == maxIterations) 
             {
                 brightness[idx] = 0;
@@ -74,22 +72,33 @@ int* calculate_portion(int y_init, int y_end, int w, int h)
                 brightness[idx] = currentBrightness;
             }
         }
+        MPI_Send(brightness, w, MPI_INT, 0, 0, MPI_COMM_WORLD);           
     }
-    return brightness;
 }
 
-void print_fractal(int n_procs, int n_rows_proc, int last_proc_residual, int w) 
+void master_process(int n_procs, int w, int h) 
 {
     MPI_Status status;
-    int *brightness_buffer = malloc((n_rows_proc + last_proc_residual) * w * sizeof(int));
-    int i,j;
-    for (i=1; i < n_procs; i++) 
-    {
-        int count = w * (n_rows_proc + ((i == n_procs - 1) ? last_proc_residual : 0));
-        fprintf(stderr, "count=%d\n", count);
-        // wait to the calculator proc ends to read the calculated pixels
-        MPI_Recv(brightness_buffer, count, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
-        for (j=0; j<count; j++) 
+    int *brightness_buffer = malloc(n_procs * w * sizeof(int));
+    int proc,j;
+    int total_rows = 0;
+    int windows_start = 0;
+    while(total_rows < h) {
+        int total_in_window = 0;
+        for (proc = 0; proc < n_procs; proc++) 
+        {
+            // ignore procs without work
+            if (windows_start + proc >= h) 
+                continue;
+            // wait to the proc row
+            int offset = w * proc;
+            MPI_Recv(brightness_buffer + offset, w, MPI_INT, proc + 1, 0, MPI_COMM_WORLD, &status);
+            total_rows += 1;
+            total_in_window +=1;
+           
+        }
+         // print the rows
+        for (j=0; j< total_in_window * w; j++) 
         {
             int b = brightness_buffer[j];
             if (b==0)
@@ -97,6 +106,7 @@ void print_fractal(int n_procs, int n_rows_proc, int last_proc_residual, int w)
             else 
                 color(b, b, 255);      
         }
+        windows_start += n_procs;
     }
 }
 
@@ -122,17 +132,12 @@ int main(int argc, char *argv[])
     begin = MPI_Wtime();
     // calculate load distribution
     int n_operators_proc = nproc - 1;
-    int residual = h % n_operators_proc; 
-    int n_rows_proc = h / n_operators_proc;
-    int y_init = n_rows_proc * (iproc - 1);
-    int y_end = y_init + n_rows_proc + ((iproc == nproc - 1) ? residual : 0);
     if (iproc != 0) 
     {
-        int *brightness = calculate_portion(y_init, y_end, w, h); 
-        MPI_Send(brightness, (y_end - y_init) * w, MPI_INT, 0, 0, MPI_COMM_WORLD);           
+        operator_process(iproc - 1, n_operators_proc, w, h); 
     } else 
     {
-        print_fractal(nproc, n_rows_proc, residual, w);
+        master_process(n_operators_proc, w, h);
     }
     end = MPI_Wtime();
     MPI_Finalize(); 
