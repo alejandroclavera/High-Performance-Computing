@@ -38,6 +38,7 @@ void operator_process(int start, int increment, int w, int h)
     
     for (y = start; y < h; y+=increment) 
     {
+        // compute the row in the window
         for(x = 0; x < w; x++) 
         {
             /* 'i' will represent the number of iterations */
@@ -85,6 +86,7 @@ void master_process(int n_procs, int w, int h)
     int windows_start = 0;
     while(total_rows < h) {
         int total_in_window = 0;
+        // wait and read all window rows computed by the slaves 
         for (proc = 0; proc < n_procs; proc++) 
         {
             // ignore procs without work
@@ -98,7 +100,7 @@ void master_process(int n_procs, int w, int h)
            
         }
          // print the rows
-        for (j=0; j< total_in_window * w; j++) 
+        for (j=0; j < total_in_window * w; j++) 
         {
             int b = brightness_buffer[j];
             if (b==0)
